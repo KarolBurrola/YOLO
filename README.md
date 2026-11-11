@@ -58,4 +58,8 @@ python mobile_server.py
 uvicorn mobile_server:app --host 0.0.0.0 --port 8000
 ```
 
-> Nota: Para abrir la cámara desde un navegador móvil en red local, los navegadores requieren `localhost` o un contexto `HTTPS`.
+Para abrirlo desde un iPhone o celular sin advertencias SSL (recomendado):
+```bash
+cloudflared tunnel --url http://127.0.0.1:8000
+```
+Esto genera una URL `https://...trycloudflare.com` válida para cámara y WebSockets. *(También puedes usar `python mobile_server.py --ssl` si colocas `cert.pem` y `key.pem` en la raíz.)*

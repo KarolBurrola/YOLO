@@ -192,8 +192,8 @@ HTML_UI = """
                 statusBadge.innerText = 'OFFLINE';
                 statusBadge.style.background = '#ff0000';
                 statusBadge.style.color = '#ffffff';
-                if (!everConnected && location.protocol === 'https:') {
-                    liveConf.innerHTML = 'Si Safari bloquea la conexión en iPhone: <a href="/cert.cer" style="color:#0284c7;text-decoration:underline;">descarga e instala el certificado SSL</a>';
+                if (!everConnected) {
+                    liveConf.innerText = 'Reconectando con el servidor...';
                 }
                 setTimeout(connectWS, 2000);
             };
@@ -486,21 +486,16 @@ async def websocket_handler(websocket: WebSocket):
 
 
 if __name__ == "__main__":
+    import sys
     import uvicorn
 
     cert_file = os.path.join(BASE_DIR, "cert.pem")
     key_file = os.path.join(BASE_DIR, "key.pem")
     ssl_kwargs = {}
-    if os.path.exists(cert_file) and os.path.exists(key_file):
+    if "--ssl" in sys.argv and os.path.exists(cert_file) and os.path.exists(key_file):
         ssl_kwargs = {"ssl_certfile": cert_file, "ssl_keyfile": key_file}
         print("Iniciando servidor en HTTPS (puerto 8000)...")
     else:
         print("Iniciando servidor en HTTP (puerto 8000)...")
 
     uvicorn.run(app, host="0.0.0.0", port=8000, **ssl_kwargs)
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=8000)
