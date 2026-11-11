@@ -406,6 +406,11 @@ def download_cert():
     return HTMLResponse("<h3>No hay certificado SSL local configurado.</h3>", status_code=404)
 
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
 @app.get("/")
 def index():
     return HTMLResponse(HTML_UI)
@@ -489,13 +494,14 @@ if __name__ == "__main__":
     import sys
     import uvicorn
 
+    port = int(os.environ.get("PORT", 8000))
     cert_file = os.path.join(BASE_DIR, "cert.pem")
     key_file = os.path.join(BASE_DIR, "key.pem")
     ssl_kwargs = {}
     if "--ssl" in sys.argv and os.path.exists(cert_file) and os.path.exists(key_file):
         ssl_kwargs = {"ssl_certfile": cert_file, "ssl_keyfile": key_file}
-        print("Iniciando servidor en HTTPS (puerto 8000)...")
+        print(f"Iniciando servidor en HTTPS (puerto {port})...")
     else:
-        print("Iniciando servidor en HTTP (puerto 8000)...")
+        print(f"Iniciando servidor en HTTP (puerto {port})...")
 
-    uvicorn.run(app, host="0.0.0.0", port=8000, **ssl_kwargs)
+    uvicorn.run(app, host="0.0.0.0", port=port, **ssl_kwargs)

@@ -62,4 +62,9 @@ Para abrirlo desde un iPhone o celular sin advertencias SSL (recomendado):
 ```bash
 cloudflared tunnel --url http://127.0.0.1:8000
 ```
-Esto genera una URL `https://...trycloudflare.com` válida para cámara y WebSockets. *(También puedes usar `python mobile_server.py --ssl` si colocas `cert.pem` y `key.pem` en la raíz.)*
+Esto genera una URL `https://...trycloudflare.com` válida para cámara y WebSockets sin necesidad de certificados locales.
+
+### 4. Despliegue permanente en la nube (24/7)
+El repositorio incluye un `Dockerfile` listo para desplegar `mobile_server.py` (con soporte dinámico de la variable de entorno `PORT` y endpoint `/health`) en plataformas con contenedores Python/WebSockets como **Railway** o **Hugging Face Spaces (Docker)**.
+
+> Nota: Servicios puramente estáticos como Netlify no ejecutan servidores persistentes de Python (`PyTorch` + `YOLOv8` + `EasyOCR` + `WebSockets`), por lo que requieren un host con soporte de contenedores o backend Python.
