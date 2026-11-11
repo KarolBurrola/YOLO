@@ -1,16 +1,19 @@
 import base64
+import os
 import cv2
 import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from ultralytics import YOLO
 from util import read_license_plate
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = FastAPI(title="ALPR Sonora - Móvil")
 
 print("Cargando detector de vehículos y placas...")
-coco_model = YOLO('yolov8n.pt')
-license_plate_detector = YOLO('license_plate_detector.pt')
+coco_model = YOLO(os.path.join(BASE_DIR, 'yolov8n.pt') if os.path.exists(os.path.join(BASE_DIR, 'yolov8n.pt')) else 'yolov8n.pt')
+license_plate_detector = YOLO(os.path.join(BASE_DIR, 'license_plate_detector.pt'))
 print("Modelos listos.")
 
 HTML_UI = """
@@ -59,6 +62,7 @@ HTML_UI = """
             position: relative;
             width: 100%;
             max-width: 600px;
+            max-height: 62vh;
             background: #000;
             display: flex;
             justify-content: center;
@@ -69,7 +73,7 @@ HTML_UI = """
         video {
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            object-fit: contain;
         }
         canvas#overlay {
             position: absolute;
@@ -133,7 +137,7 @@ HTML_UI = """
         <span class="badge" id="statusBadge">CONECTANDO</span>
     </header>
 
-    <div class="camera-container">
+    <div class="camera-container" id="cameraContainer">
         <video id="webcam" autoplay playsinline muted></video>
         <canvas id="overlay"></canvas>
     </div>
@@ -152,6 +156,7 @@ HTML_UI = """
     <canvas id="hiddenCanvas" style="display:none;"></canvas>
 
     <script>
+        const cameraContainer = document.getElementById('cameraContainer');
         const video = document.getElementById('webcam');
         const overlay = document.getElementById('overlay');
         const hiddenCanvas = document.getElementById('hiddenCanvas');
@@ -162,6 +167,9 @@ HTML_UI = """
 
         const seenPlates = new Set();
         let ws;
+        let inFlight = false;
+        let lastSentAt = 0;
+        let everConnected = false;
 
         // Preloaded images cache for live render
         const imageCache = {};
@@ -171,19 +179,27 @@ HTML_UI = """
             ws = new WebSocket(`${protocol}//${location.host}/ws`);
 
             ws.onopen = () => {
+                everConnected = true;
+                inFlight = false;
                 statusBadge.innerText = 'EN VIVO';
                 statusBadge.style.background = '#00ff00';
                 statusBadge.style.color = '#000000';
+                liveConf.innerText = 'Apunta hacia el vehículo';
             };
 
             ws.onclose = () => {
+                inFlight = false;
                 statusBadge.innerText = 'OFFLINE';
                 statusBadge.style.background = '#ff0000';
                 statusBadge.style.color = '#ffffff';
+                if (!everConnected && location.protocol === 'https:') {
+                    liveConf.innerHTML = 'Si Safari bloquea la conexión en iPhone: <a href="/cert.cer" style="color:#0284c7;text-decoration:underline;">descarga e instala el certificado SSL</a>';
+                }
                 setTimeout(connectWS, 2000);
             };
 
             ws.onmessage = (event) => {
+                inFlight = false;
                 const data = JSON.parse(event.data);
                 renderOutMp4Style(data);
 
@@ -201,7 +217,13 @@ HTML_UI = """
             const now = new Date().toLocaleTimeString();
             const div = document.createElement('div');
             div.className = 'history-item';
-            div.innerHTML = `<span>${plate}</span><span class="history-time">${now}</span>`;
+            const plateSpan = document.createElement('span');
+            plateSpan.textContent = plate;
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'history-time';
+            timeSpan.textContent = now;
+            div.appendChild(plateSpan);
+            div.appendChild(timeSpan);
             historyList.prepend(div);
             if (historyList.children.length > 5) {
                 historyList.removeChild(historyList.lastChild);
@@ -236,8 +258,10 @@ HTML_UI = """
             overlay.height = video.videoHeight || 480;
             ctx.clearRect(0, 0, overlay.width, overlay.height);
 
-            const scaleX = overlay.width / 480.0;
-            const scaleY = overlay.height / 360.0;
+            const srcW = data.frame_width || 480.0;
+            const srcH = data.frame_height || 360.0;
+            const scaleX = overlay.width / srcW;
+            const scaleY = overlay.height / srcH;
 
             const detections = data.detections || [];
             detections.forEach(item => {
@@ -305,31 +329,51 @@ HTML_UI = """
         }
 
         // Start Camera
-        navigator.mediaDevices.getUserMedia({
-            video: {
-                facingMode: { ideal: 'environment' },
-                width: { ideal: 640 },
-                height: { ideal: 480 }
-            },
-            audio: false
-        }).then(stream => {
-            video.srcObject = stream;
-            connectWS();
-        }).catch(err => {
-            statusBadge.innerText = 'SIN CAMARA';
-            liveConf.innerText = 'Error al abrir cámara: ' + err.message;
-        });
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            statusBadge.innerText = 'REQUIERE HTTPS';
+            liveConf.innerText = 'Abre esta página usando HTTPS para habilitar la cámara en iPhone/Android.';
+        } else {
+            navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: { ideal: 'environment' },
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                },
+                audio: false
+            }).then(async stream => {
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    if (video.videoWidth > 0 && video.videoHeight > 0) {
+                        cameraContainer.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+                    }
+                };
+                await video.play().catch(() => {});
+                connectWS();
+            }).catch(err => {
+                statusBadge.innerText = 'SIN CAMARA';
+                liveConf.innerText = 'Error al abrir cámara: ' + err.message;
+            });
+        }
 
-        // Frame Sender Loop (5 FPS)
+        // Frame Sender Loop (adaptive, avoids queuing frames on mobile)
         setInterval(() => {
             if (!ws || ws.readyState !== WebSocket.OPEN) return;
-            if (video.videoWidth === 0) return;
+            if (video.videoWidth === 0 || video.videoHeight === 0) return;
+            const now = Date.now();
+            if (inFlight && now - lastSentAt < 2500) return;
 
-            hiddenCanvas.width = 480;
-            hiddenCanvas.height = 360;
+            const maxDim = 640;
+            const scale = Math.min(1, maxDim / Math.max(video.videoWidth, video.videoHeight));
+            const sendW = Math.max(160, Math.round(video.videoWidth * scale));
+            const sendH = Math.max(120, Math.round(video.videoHeight * scale));
+
+            hiddenCanvas.width = sendW;
+            hiddenCanvas.height = sendH;
             const hCtx = hiddenCanvas.getContext('2d');
-            hCtx.drawImage(video, 0, 0, 480, 360);
-            const dataUrl = hiddenCanvas.toDataURL('image/jpeg', 0.6);
+            hCtx.drawImage(video, 0, 0, sendW, sendH);
+            const dataUrl = hiddenCanvas.toDataURL('image/jpeg', 0.65);
+            inFlight = true;
+            lastSentAt = now;
             ws.send(dataUrl.split(',')[1]);
         }, 200);
     </script>
@@ -348,6 +392,18 @@ def get_manifest():
         "theme_color": "#000000",
         "orientation": "portrait"
     }
+
+
+@app.get("/cert.cer")
+def download_cert():
+    cert_path = os.path.join(BASE_DIR, "cert.pem")
+    if os.path.exists(cert_path):
+        return FileResponse(
+            cert_path,
+            media_type="application/x-x509-ca-cert",
+            filename="ALPR_Sonora_Cert.cer"
+        )
+    return HTMLResponse("<h3>No hay certificado SSL local configurado.</h3>", status_code=404)
 
 
 @app.get("/")
@@ -418,13 +474,30 @@ async def websocket_handler(websocket: WebSocket):
             await websocket.send_json({
                 "detections": detections_payload,
                 "plate": detected_plate,
-                "score": detected_score
+                "score": detected_score,
+                "frame_width": int(frame.shape[1]),
+                "frame_height": int(frame.shape[0]),
             })
 
     except WebSocketDisconnect:
         pass
     except Exception as e:
         print(f"Error en websocket: {e}")
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    cert_file = os.path.join(BASE_DIR, "cert.pem")
+    key_file = os.path.join(BASE_DIR, "key.pem")
+    ssl_kwargs = {}
+    if os.path.exists(cert_file) and os.path.exists(key_file):
+        ssl_kwargs = {"ssl_certfile": cert_file, "ssl_keyfile": key_file}
+        print("Iniciando servidor en HTTPS (puerto 8000)...")
+    else:
+        print("Iniciando servidor en HTTP (puerto 8000)...")
+
+    uvicorn.run(app, host="0.0.0.0", port=8000, **ssl_kwargs)
 
 
 if __name__ == "__main__":
