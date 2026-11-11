@@ -1,0 +1,11 @@
+ultralytics
+pandas
+opencv-python
+numpy
+scipy
+easyocr
+filterpy
+scikit-image
+matplotlib
+fastapi
+uvicorn[standard]
