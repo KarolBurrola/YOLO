@@ -2,7 +2,9 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONUTF8=1
+    PYTHONUTF8=1 \
+    EASYOCR_MODULE_PATH=/app/.EasyOCR \
+    YOLO_CONFIG_DIR=/app/.config/Ultralytics
 
 WORKDIR /app
 
@@ -18,7 +20,9 @@ RUN pip install --no-cache-dir torch torchvision --index-url https://download.py
 
 COPY . .
 
-RUN python -c "from ultralytics import YOLO; import easyocr; YOLO('yolov8n.pt'); easyocr.Reader(['en'], gpu=False, verbose=False)"
+RUN mkdir -p /app/.EasyOCR /app/.config/Ultralytics \
+    && python -c "from ultralytics import YOLO; import easyocr; YOLO('yolov8n.pt'); easyocr.Reader(['en'], gpu=False, verbose=False)" \
+    && chmod -R a+rwX /app
 
 EXPOSE 8000
 

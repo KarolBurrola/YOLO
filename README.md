@@ -1,3 +1,12 @@
+---
+title: ALPR Sonora YOLOv8
+emoji: 🚗
+colorFrom: green
+colorTo: gray
+sdk: docker
+app_port: 8000
+---
+
 # ALPR Sonora - YOLOv8
 
 Sistema de reconocimiento automático de matrículas (ALPR) adaptado para placas de **Sonora y México** con **YOLOv8**, seguimiento vehicular con **SORT**, estimación de velocidad (**SpeedEstimator**) y servidor web en tiempo real con **FastAPI / WebSockets**.
